@@ -1,5 +1,9 @@
 #!/usr/bin/env perl
 
+=doc
+    *** Revisar que vayan bien todas las cadenas
+=cut
+
 use strict;
 
 use HTTP::Tiny;
@@ -7,7 +11,7 @@ use Data::Dumper;
 use JSON qw(decode_json);
 use feature qw(say);
 
-my $version = 001;
+my $version = 002;
 
 my ($conf,$sys,$net);
 
@@ -109,7 +113,7 @@ sub ReadIF {
 	$sys->{dev}->{$a[$c]}->{ipv6} = 1;
     }
 
-    $conf->{init}->{devs} = { map { $_ => 0 } keys $sys->{dev} };
+    $conf->{init}->{devs} = { map { $_ => 0 } keys %{$sys->{dev}} };
 }
 
 sub X {
@@ -121,7 +125,7 @@ sub X {
 	qx(/sbin/iptables $a);
     }
 
-    #say $a;
+    say $a if $ENV{'PFIRE_DEBUG'};
 }
 
 sub Forward {
@@ -323,21 +327,21 @@ sub Process_Dev {
     }
 
     if ( $dev->{services}->{limits} ) {
-	for my $port (keys $dev->{services}->{limits} ) {
+	for my $port (keys %{ $dev->{services}->{limits} } ) {
 	    X('-I INPUT -p tcp --dport '.$port.' -i '.$dev->{dev}.' -m state --state NEW -m recent --update '.$dev->{services}->{limits}->{$port}.' --name port'.$port.' -j limit-drop');
 	    X('-I INPUT -p tcp --dport '.$port.' -m state --state NEW -m recent --name port'.$port.' --set');
 	}
     }
 
     if ( $dev->{redirect} ) {
-	for my $K ( keys $dev->{redirect}->{tcp} ) {
+	for my $K ( keys %{ $dev->{redirect}->{tcp} } ) {
 	    Redirect( { i => $dev->{dev} , dport => $K , to => $dev->{redirect}->{tcp}->{$K} });
 	}
     }
 
     if ( $dev->{block_from} ) {
-	for my $IP ( keys $dev->{block_from} ) {
-	    for my $protocol ( keys $dev->{block_from}->{$IP} ) {
+	for my $IP ( keys %{ $dev->{block_from} } ) {
+	    for my $protocol ( keys %{ $dev->{block_from}->{$IP} } ) {
 		for my $port ( @{$dev->{block_from}->{$IP}->{$protocol}} ) {
 		    X('-A INPUT -p '.$protocol.' -s '.$IP.' --dport '.$port.' -j block-from');
 		}
@@ -346,7 +350,7 @@ sub Process_Dev {
     }
 
     if ( $dev->{block_out} ) {
-	for my $IP ( keys $dev->{block_out} ) {
+	for my $IP ( keys %{ $dev->{block_out} } ) {
 	    X('-I FORWARD -s 0/0 -d '.$IP.' -j DROP');
 	    X('-I FORWARD -s '.$IP.' -d 0/0 -j DROP');
 	}
@@ -360,6 +364,12 @@ sub Process_Dev {
 
 sub Init {
 
+    ## Backup
+    if ( $conf->{backup} ) {
+	my $save = 'pfire-backup-'.time();
+	qx(/sbin/iptables-save > $save);
+    }
+    
     ## Clean
     X('-F');
     X('-X');
@@ -376,26 +386,23 @@ sub Init {
     Forward($conf->{forward}) if $conf->{forward}->{enable};
     ICMP() if $conf->{icmp};
 
-    Process_Dev($conf->{devs}->{$_}) for keys $conf->{devs};
+    Process_Dev($conf->{devs}->{$_}) for keys %{ $conf->{devs} };
 
     Block_TOR() if $conf->{secure}->{block_tor};
 
     map { BlockIP($_) } @{$conf->{block_ip}} if $conf->{block_ip};
-
-    ## save rules
-    #qx(/sbin/iptables-save > /etc/iptables/rules);
 }
 
 sub Report {
     say "Net :";
-    for my $Net ( keys $conf->{init}->{devs} ) {
-	say $conf->{init}->{devs}->{$Net} ? "\t$Net OK" : "\t$Net No config";
+    for my $Net ( keys %{ $conf->{init}->{devs} } ) {
+	say $conf->{init}->{devs}->{$Net} ? "\t$Net OK" : "\t$Net\tNo config";
     }
 
     say "iptables :";
     for my $proto (qw(tcp udp)) {
 	next unless $net->{services}->{$proto};
-	for my $S ( keys $net->{services}->{$proto} ) {
+	for my $S ( keys %{ $net->{services}->{$proto} } ) {
 	    map { say "\t$_" } @{$net->{services}->{$proto}->{$S}};
 	}
     }
@@ -404,7 +411,7 @@ sub Report {
     for my $proto (qw(tcp udp)) {
 	next unless $net->{listen}->{$proto};
 	say "\t[$proto]\t$_:".$net->{listen}->{$proto}->{$_} for
-	    keys $net->{listen}->{$proto};
+	    keys %{ $net->{listen}->{$proto} };
     }
 }
 
@@ -421,7 +428,11 @@ if ( -e '/etc/pfire.conf' ) {
     exit;
 }
 
-open($conf->{fd},">","iptables-save") if $conf->{action} eq 'save';
+# template file
+if ( $conf->{action} eq 'save' ) {
+    my $save = $conf->{template} // 'iptables-save';
+    open($conf->{fd},">",$save);
+}
 
 Netstat();
 ReadIF();

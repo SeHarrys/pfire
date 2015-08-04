@@ -1,6 +1,6 @@
 # pfire iptables script
 
-    pfire a simple script to iptables, the configuration is in json format
+    Simple script to iptables, the configuration is in json format
 
     Services TCP & UDP depends on the police used
 
@@ -24,14 +24,13 @@
     secure :
      block_tor : Block TOR Network
 
-    iptables -t nat -L -n -v
-
-    pfire read first: '/etc/pfire.conf' next enviroment 'PFIRE' and last check ARGV[0] , the specified file could be a local file or http
-
     iptables chains
      - blacklist-ip
      - admin-ip               : Allow only connections to this IPs
      - block-country-iso_code : One chain per country
      - block-tor
 
-    - Report
+    iptables -t nat -L -n -v
+
+    pfire read in the next order for the config file first read enviroment 'PFIRE' and last check ARGV[0] 
+    the specified file could be a local file or http
